@@ -1,5 +1,5 @@
 dataset:
-  input_glob: "/path/to/input-npy/*.npy"
+  feature_glob: "/path/to/feature-npy/*.npy"
   target_glob: "/path/to/target-npy/*.npy"
   test_num: 100
   seed: 0

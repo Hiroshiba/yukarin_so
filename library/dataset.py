@@ -11,15 +11,15 @@ from library.utility.dataset_utility import default_convert
 
 
 @dataclass
-class DatasetInputData:
-    input_path: Path
+class DatasetFeatureData:
+    feature_path: Path
     target_path: Path
 
 
-class InputTargetDataset(Dataset):
+class FeatureTargetDataset(Dataset):
     def __init__(
         self,
-        datas: Sequence[DatasetInputData],
+        datas: Sequence[DatasetFeatureData],
     ):
         self.datas = datas
 
@@ -28,40 +28,40 @@ class InputTargetDataset(Dataset):
 
     def __getitem__(self, i):
         data = self.datas[i]
-        input = numpy.load(str(data.input_path), allow_pickle=True)
+        feature = numpy.load(str(data.feature_path), allow_pickle=True)
         target = numpy.load(str(data.target_path), allow_pickle=True)
 
         return default_convert(
             dict(
-                input=input,
+                feature=feature,
                 target=target,
             )
         )
 
 
 def create_dataset(config: DatasetConfig):
-    input_paths = {Path(p).stem: Path(p) for p in glob.glob(str(config.input_glob))}
-    assert len(input_paths) > 0
+    feature_paths = {Path(p).stem: Path(p) for p in glob.glob(str(config.feature_glob))}
+    assert len(feature_paths) > 0
 
     target_paths = {Path(p).stem: Path(p) for p in glob.glob(str(config.target_glob))}
-    assert len(input_paths) == len(target_paths)
+    assert len(feature_paths) == len(target_paths)
 
-    inputs = [
-        DatasetInputData(
-            input_path=input_path,
+    features = [
+        DatasetFeatureData(
+            feature_path=feature_path,
             target_path=target_path,
         )
-        for input_path, target_path in zip(input_paths, target_paths)
+        for feature_path, target_path in zip(feature_paths, target_paths)
     ]
 
     if config.seed is not None:
-        numpy.random.RandomState(config.seed).shuffle(inputs)
+        numpy.random.RandomState(config.seed).shuffle(features)
 
-    tests, trains = inputs[: config.test_num], inputs[config.test_num :]
+    tests, trains = features[: config.test_num], features[config.test_num :]
     train_tests = trains[: config.test_num]
 
     def dataset_wrapper(datas, is_eval: bool):
-        dataset = InputTargetDataset(
+        dataset = FeatureTargetDataset(
             datas=datas,
         )
         if is_eval:

@@ -2,11 +2,11 @@ from typing import NamedTuple
 
 import torch
 from pytorch_trainer import report
-from torch import nn, Tensor
+from torch import Tensor, nn
 from torch.nn.functional import cross_entropy
 
 from library.config import ModelConfig, NetworkConfig
-from library.network.predictor import create_predictor, Predictor
+from library.network.predictor import Predictor, create_predictor
 
 
 class Networks(NamedTuple):
@@ -27,17 +27,17 @@ def accuracy(output: Tensor, target: Tensor):
 
 
 class Model(nn.Module):
-    def __init__(self, model_config: ModelConfig, networks: Networks) -> None:
+    def __init__(self, model_config: ModelConfig, networks: Networks):
         super().__init__()
         self.model_config = model_config
         self.predictor = networks.predictor
 
     def __call__(
         self,
-        input: Tensor,
+        feature: Tensor,
         target: Tensor,
     ):
-        feature = self.predictor(input)
+        feature = self.predictor(feature)
         output = self.tail(feature, target)
 
         loss = cross_entropy(output, target)
@@ -48,7 +48,7 @@ class Model(nn.Module):
             accuracy=accuracy(output, target),
         )
         if not self.training:
-            weight = input.shape[0]
+            weight = feature.shape[0]
             values = {key: (l, weight) for key, l in values.items()}  # add weight
         report(values, self)
 

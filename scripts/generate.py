@@ -58,7 +58,7 @@ def generate(
     dataset = create_dataset(config.dataset)["train"]
     for data in tqdm(dataset, desc="generate"):
         target = data["target"]
-        output = generator.generate(data["input"])
+        output = generator.generate(data["feature"])
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ class Generator(object):
         config: Config,
         predictor: Union[Predictor, Path],
         use_gpu: bool,
-    ) -> None:
+    ):
         self.config = config
         self.device = torch.device("cuda") if use_gpu else torch.device("cpu")
 
@@ -26,12 +26,12 @@ class Generator(object):
 
     def generate(
         self,
-        input: Union[numpy.ndarray, torch.Tensor],
+        feature: Union[numpy.ndarray, torch.Tensor],
     ):
-        if isinstance(input, numpy.ndarray):
-            input = torch.from_numpy(input)
-        input = input.to(self.device)
+        if isinstance(feature, numpy.ndarray):
+            feature = torch.from_numpy(feature)
+        feature = feature.to(self.device)
 
         with torch.no_grad():
-            output = self.predictor(input.unsqueeze(0))[0]
+            output = self.predictor(feature.unsqueeze(0))[0]
         return output.numpy()

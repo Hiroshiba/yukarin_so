@@ -7,7 +7,7 @@ from library.utility.git_utility import get_branch_name, get_commit_id
 
 @dataclass
 class DatasetConfig:
-    input_glob: str
+    feature_glob: str
     target_glob: str
     test_num: int
     eval_times_num: int = 1
