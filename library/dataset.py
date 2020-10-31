@@ -1,7 +1,7 @@
 import glob
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, Union
 
 import numpy
 from torch.utils.data.dataset import ConcatDataset, Dataset
@@ -11,15 +11,27 @@ from library.utility.dataset_utility import default_convert
 
 
 @dataclass
-class DatasetFeatureData:
+class InputData:
+    feature: numpy.ndarray
+    target: numpy.ndarray
+
+
+@dataclass
+class LazyInputData:
     feature_path: Path
     target_path: Path
+
+    def generate(self):
+        return InputData(
+            feature=numpy.load(self.feature_path, allow_pickle=True),
+            target=numpy.load(self.target_path, allow_pickle=True),
+        )
 
 
 class FeatureTargetDataset(Dataset):
     def __init__(
         self,
-        datas: Sequence[DatasetFeatureData],
+        datas: Sequence[Union[InputData, LazyInputData]],
     ):
         self.datas = datas
 
@@ -28,26 +40,26 @@ class FeatureTargetDataset(Dataset):
 
     def __getitem__(self, i):
         data = self.datas[i]
-        feature = numpy.load(str(data.feature_path), allow_pickle=True)
-        target = numpy.load(str(data.target_path), allow_pickle=True)
+        if isinstance(input, LazyInputData):
+            data = data.generate()
 
         return default_convert(
             dict(
-                feature=feature,
-                target=target,
+                feature=data.feature,
+                target=data.target,
             )
         )
 
 
 def create_dataset(config: DatasetConfig):
-    feature_paths = {Path(p).stem: Path(p) for p in glob.glob(str(config.feature_glob))}
+    feature_paths = [Path(p) for p in sorted(glob.glob(str(config.feature_glob)))]
     assert len(feature_paths) > 0
 
-    target_paths = {Path(p).stem: Path(p) for p in glob.glob(str(config.target_glob))}
+    target_paths = [Path(p) for p in sorted(glob.glob(str(config.target_glob)))]
     assert len(feature_paths) == len(target_paths)
 
     features = [
-        DatasetFeatureData(
+        LazyInputData(
             feature_path=feature_path,
             target_path=target_path,
         )
@@ -58,7 +70,6 @@ def create_dataset(config: DatasetConfig):
         numpy.random.RandomState(config.seed).shuffle(features)
 
     tests, trains = features[: config.test_num], features[config.test_num :]
-    train_tests = trains[: config.test_num]
 
     def dataset_wrapper(datas, is_eval: bool):
         dataset = FeatureTargetDataset(
