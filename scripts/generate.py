@@ -55,7 +55,7 @@ def generate(
         use_gpu=use_gpu,
     )
 
-    dataset = create_dataset(config.dataset)["train"]
+    dataset = create_dataset(config.dataset)["test"]
     for data in tqdm(dataset, desc="generate"):
         target = data["target"]
         output = generator.generate(data["feature"])

@@ -6,7 +6,7 @@ from typing import Any, Dict
 import torch
 import yaml
 from pytorch_trainer.iterators import MultiprocessIterator
-from pytorch_trainer.training import Trainer, extensions
+from pytorch_trainer.training import Trainer, extensions, triggers
 from pytorch_trainer.training.updaters import StandardUpdater
 from tensorboardX import SummaryWriter
 from torch import optim
@@ -14,7 +14,7 @@ from torch import optim
 from library.config import Config
 from library.dataset import create_dataset
 from library.model import Model, create_network
-from library.utility.tensorboard_extension import TensorboardReport
+from library.utility.trainer_extension import TensorboardReport, WandbReport
 
 
 def create_trainer(
@@ -25,7 +25,7 @@ def create_trainer(
     config = Config.from_dict(config_dict)
     config.add_git_info()
 
-    output.mkdir(parents=True)
+    output.mkdir(exist_ok=True, parents=True)
     with (output / "config.yaml").open(mode="w") as f:
         yaml.safe_dump(config.to_dict(), f)
 
@@ -88,9 +88,14 @@ def create_trainer(
     trainer.extend(ext, name="test", trigger=trigger_log)
 
     ext = extensions.snapshot_object(
-        networks.predictor, filename="predictor_{.updater.iteration}.pth"
+        networks.predictor,
+        filename="predictor_{.updater.iteration}.pth",
+        n_retains=5,
     )
-    trainer.extend(ext, trigger=trigger_snapshot)
+    trainer.extend(
+        ext,
+        trigger=triggers.MaxValueTrigger("test/main/loss", trigger=trigger_snapshot),
+    )
 
     trainer.extend(extensions.FailOnNonNumber(), trigger=trigger_log)
     trainer.extend(extensions.LogReport(trigger=trigger_log))
@@ -102,9 +107,26 @@ def create_trainer(
     ext = TensorboardReport(writer=SummaryWriter(Path(output)))
     trainer.extend(ext, trigger=trigger_log)
 
+    if config.project.category is not None:
+        ext = WandbReport(
+            config_dict=config.to_dict(),
+            project_category=config.project.category,
+            project_name=config.project.name,
+            output_dir=output.joinpath("wandb"),
+        )
+        trainer.extend(ext, trigger=trigger_log)
+
     (output / "struct.txt").write_text(repr(model))
 
     if trigger_stop is not None:
         trainer.extend(extensions.ProgressBar(trigger_stop))
+
+    ext = extensions.snapshot_object(
+        trainer,
+        filename="trainer_{.updater.iteration}.pth",
+        n_retains=1,
+        autoload=True,
+    )
+    trainer.extend(ext, trigger=trigger_snapshot)
 
     return trainer

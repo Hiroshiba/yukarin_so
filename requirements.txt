@@ -1,7 +1,8 @@
 numpy
-torch==1.5.0
+torch
 tqdm
 pytest
 pyyaml
 tensorboardX
+wandb
 git+https://github.com/Hiroshiba/pytorch-trainer@1.2.0

@@ -31,17 +31,14 @@ class TrainConfig:
     snapshot_iteration: int
     stop_iteration: int
     num_processes: Optional[int] = None
-    optimizer: Dict[str, Any] = field(
-        default_factory=dict(
-            name="Adam",
-        )
-    )
+    optimizer: Dict[str, Any] = field(default_factory=dict(name="Adam"))
 
 
 @dataclass
 class ProjectConfig:
     name: str
     tags: Dict[str, Any] = field(default_factory=dict)
+    category: Optional[str] = None
 
 
 @dataclass
