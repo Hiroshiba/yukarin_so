@@ -1,8 +1,8 @@
 numpy
+tensorboardX
 torch
 tqdm
 pytest
 pyyaml
-tensorboardX
 wandb
-git+https://github.com/Hiroshiba/pytorch-trainer@1.2.0
+git+https://github.com/Hiroshiba/pytorch-trainer@1.3.1

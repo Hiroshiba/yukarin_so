@@ -30,8 +30,9 @@ class TrainConfig:
     log_iteration: int
     snapshot_iteration: int
     stop_iteration: int
+    optimizer: Dict[str, Any]
+    weight_initializer: Optional[str] = None
     num_processes: Optional[int] = None
-    optimizer: Dict[str, Any] = field(default_factory=dict(name="Adam"))
 
 
 @dataclass

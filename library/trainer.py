@@ -10,10 +10,12 @@ from pytorch_trainer.training import Trainer, extensions, triggers
 from pytorch_trainer.training.updaters import StandardUpdater
 from tensorboardX import SummaryWriter
 from torch import optim
+from torch.optim.optimizer import Optimizer
 
 from library.config import Config
 from library.dataset import create_dataset
 from library.model import Model, create_network
+from library.utility.pytorch_utility import init_weights
 from library.utility.trainer_extension import TensorboardReport, WandbReport
 
 
@@ -32,6 +34,8 @@ def create_trainer(
     # model
     networks = create_network(config.network)
     model = Model(model_config=config.model, networks=networks)
+    if config.train.weight_initializer is not None:
+        init_weights(model, name=config.train.weight_initializer)
 
     device = torch.device("cuda")
     model.to(device)
@@ -58,6 +62,7 @@ def create_trainer(
     cp: Dict[str, Any] = copy(config.train.optimizer)
     n = cp.pop("name").lower()
 
+    optimizer: Optimizer
     if n == "adam":
         optimizer = optim.Adam(model.parameters(), **cp)
     elif n == "sgd":
@@ -98,6 +103,7 @@ def create_trainer(
     )
 
     trainer.extend(extensions.FailOnNonNumber(), trigger=trigger_log)
+    trainer.extend(extensions.observe_lr(), trigger=trigger_log)
     trainer.extend(extensions.LogReport(trigger=trigger_log))
     trainer.extend(
         extensions.PrintReport(["iteration", "main/loss", "test/main/loss"]),
