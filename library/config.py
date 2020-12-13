@@ -27,12 +27,14 @@ class ModelConfig:
 @dataclass
 class TrainConfig:
     batch_size: int
+    eval_batch_size: Optional[int]
     log_iteration: int
     snapshot_iteration: int
     stop_iteration: int
     optimizer: Dict[str, Any]
     weight_initializer: Optional[str] = None
     num_processes: Optional[int] = None
+    use_multithread: bool = False
 
 
 @dataclass

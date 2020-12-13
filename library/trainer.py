@@ -1,5 +1,6 @@
 import warnings
 from copy import copy
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict
 
@@ -17,6 +18,7 @@ from library.dataset import create_dataset
 from library.model import Model, create_network
 from library.utility.pytorch_utility import init_weights
 from library.utility.trainer_extension import TensorboardReport, WandbReport
+from library.utility.trainer_utility import create_iterator
 
 
 def create_trainer(
@@ -41,15 +43,13 @@ def create_trainer(
     model.to(device)
 
     # dataset
-    def _create_iterator(dataset, for_train: bool):
-        return MultiprocessIterator(
-            dataset,
-            config.train.batch_size,
-            repeat=for_train,
-            shuffle=for_train,
-            n_processes=config.train.num_processes,
-            dataset_timeout=60 * 15,
-        )
+    _create_iterator = partial(
+        create_iterator,
+        batch_size=config.train.batch_size,
+        eval_batch_size=config.train.eval_batch_size,
+        num_processes=config.train.num_processes,
+        use_multithread=config.train.use_multithread,
+    )
 
     datasets = create_dataset(config.dataset)
     train_iter = _create_iterator(datasets["train"], for_train=True)
