@@ -7,7 +7,7 @@ from typing import Any, Dict
 import torch
 import yaml
 from pytorch_trainer.iterators import MultiprocessIterator
-from pytorch_trainer.training import Trainer, extensions, triggers
+from pytorch_trainer.training import Trainer, extensions
 from pytorch_trainer.training.updaters import StandardUpdater
 from tensorboardX import SummaryWriter
 from torch import optim
@@ -18,7 +18,7 @@ from library.dataset import create_dataset
 from library.model import Model, create_network
 from library.utility.pytorch_utility import init_weights
 from library.utility.trainer_extension import TensorboardReport, WandbReport
-from library.utility.trainer_utility import create_iterator
+from library.utility.trainer_utility import LowValueTrigger, create_iterator
 
 
 def create_trainer(
@@ -99,7 +99,7 @@ def create_trainer(
     )
     trainer.extend(
         ext,
-        trigger=triggers.MaxValueTrigger("test/main/loss", trigger=trigger_snapshot),
+        trigger=LowValueTrigger("test/main/loss", trigger=trigger_snapshot),
     )
 
     trainer.extend(extensions.FailOnNonNumber(), trigger=trigger_log)
