@@ -80,7 +80,7 @@ def create_trainer(
 
     # trainer
     trigger_log = (config.train.log_iteration, "iteration")
-    trigger_snapshot = (config.train.snapshot_iteration, "iteration")
+    trigger_eval = (config.train.eval_iteration, "iteration")
     trigger_stop = (
         (config.train.stop_iteration, "iteration")
         if config.train.stop_iteration is not None
@@ -92,14 +92,20 @@ def create_trainer(
     ext = extensions.Evaluator(test_iter, model, device=device)
     trainer.extend(ext, name="test", trigger=trigger_log)
 
+    if config.train.stop_iteration is not None:
+        saving_model_num = int(
+            config.train.stop_iteration / config.train.eval_iteration / 10
+        )
+    else:
+        saving_model_num = 10
     ext = extensions.snapshot_object(
         networks.predictor,
         filename="predictor_{.updater.iteration}.pth",
-        n_retains=5,
+        n_retains=saving_model_num,
     )
     trainer.extend(
         ext,
-        trigger=LowValueTrigger("test/main/loss", trigger=trigger_snapshot),
+        trigger=LowValueTrigger("test/main/loss", trigger=trigger_eval),
     )
 
     trainer.extend(extensions.FailOnNonNumber(), trigger=trigger_log)
@@ -133,6 +139,6 @@ def create_trainer(
         n_retains=1,
         autoload=True,
     )
-    trainer.extend(ext, trigger=trigger_snapshot)
+    trainer.extend(ext, trigger=trigger_eval)
 
     return trainer
