@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
-from library.utility import dataclass_utility
-from library.utility.git_utility import get_branch_name, get_commit_id
+from yukarin_so.utility import dataclass_utility
+from yukarin_so.utility.git_utility import get_branch_name, get_commit_id
 
 
 @dataclass
