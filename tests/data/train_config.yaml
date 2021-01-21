@@ -1,21 +1,38 @@
 dataset:
-  feature_glob: "/path/to/feature-npy/*.npy"
-  target_glob: "/path/to/target-npy/*.npy"
-  test_num: 100
+  f0_glob: "/path/to/f0/*.npy"
+  phoneme_glob: "/path/to/phoneme/*.npy"
+  phoneme_list_glob: "/path/to/phoneme_list/*.lab"
+  speaker_dict_path: "/path/to/speaker_dict.json"
+  speaker_size: 100
+  test_num: 10
+  test_trial_num: 1
   seed: 0
 
-network: {}
+network:
+  phoneme_size: 39
+  phoneme_embedding_size: 16
+  speaker_size: 100
+  speaker_embedding_size: 16
+  transformer_hidden_size: 256
+  tranformer_head_num: 8
+  transformer_encoder_layer_num: 4
+  transformer_decoder_layer_num: 6
+  tranformer_linear_size: 1024
 
-model: {}
+model:
+  f0_loss_weight: 1
+  phoneme_loss_weight: 1
+  vuv_loss_weight: 1
+  stop_loss_weight: 1
 
 train:
-  batch_size: 100
+  batch_size: 16
   log_iteration: 1000
-  eval_iteration: 100000
-  stop_iteration: 100000
+  snapshot_iteration: 20000
+  stop_iteration: 1000000
   optimizer:
     name: "adam"
-    lr: 0.001
+    lr: 0.0001
 
 project:
   name: null

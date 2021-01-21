@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import numpy
 import torch
@@ -13,9 +13,11 @@ class Generator(object):
         self,
         config: Config,
         predictor: Union[Predictor, Path],
-        use_gpu: bool,
+        max_length: int = 1000,
+        use_gpu: bool = True,
     ):
         self.config = config
+        self.max_length = max_length
         self.device = torch.device("cuda") if use_gpu else torch.device("cpu")
 
         if isinstance(predictor, Path):
@@ -26,12 +28,27 @@ class Generator(object):
 
     def generate(
         self,
-        feature: Union[numpy.ndarray, torch.Tensor],
+        phoneme_list: Union[numpy.ndarray, torch.Tensor],
+        speaker_id: Optional[Union[int, numpy.ndarray, torch.Tensor]],
     ):
-        if isinstance(feature, numpy.ndarray):
-            feature = torch.from_numpy(feature)
-        feature = feature.to(self.device)
+        if isinstance(phoneme_list, numpy.ndarray):
+            phoneme_list = torch.from_numpy(phoneme_list)
+        phoneme_list = phoneme_list.to(self.device)
 
-        with torch.no_grad():
-            output = self.predictor(feature.unsqueeze(0))[0]
-        return output.numpy()
+        if speaker_id is not None:
+            if isinstance(speaker_id, int):
+                speaker_id = numpy.array(speaker_id)
+            if isinstance(speaker_id, numpy.ndarray):
+                speaker_id = torch.from_numpy(speaker_id)
+            speaker_id = speaker_id.reshape((1,)).to(torch.int64).to(self.device)
+
+        d = self.predictor.generate(
+            phoneme_list=phoneme_list,
+            speaker_id=speaker_id,
+            max_length=self.max_length,
+        )
+
+        return dict(
+            f0=d["f0"].cpu().numpy(),
+            phoneme=d["phoneme"].cpu().numpy(),
+        )

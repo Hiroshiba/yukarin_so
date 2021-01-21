@@ -1,86 +1,176 @@
-import glob
+import json
 from dataclasses import dataclass
+from glob import glob
 from pathlib import Path
-from typing import Sequence, Union
+from typing import Dict, List, Optional, Union
 
 import numpy
+from acoustic_feature_extractor.data.phoneme import JvsPhoneme
+from acoustic_feature_extractor.data.sampling_data import SamplingData
 from torch.utils.data._utils.collate import default_convert
 from torch.utils.data.dataset import ConcatDataset, Dataset
 
 from yukarin_so.config import DatasetConfig
 
 
-@dataclass
-class InputData:
-    feature: numpy.ndarray
-    target: numpy.ndarray
+def resample(rate: float, data: SamplingData):
+    length = int(len(data.array) / data.rate * rate)
+    indexes = (numpy.random.rand() + numpy.arange(length)) * (data.rate / rate)
+    return data.array[indexes.astype(int)]
 
 
 @dataclass
-class LazyInputData:
-    feature_path: Path
-    target_path: Path
+class Input:
+    f0: SamplingData
+    phoneme: SamplingData
+    phoneme_list: List[JvsPhoneme]
+
+
+@dataclass
+class LazyInput:
+    f0_path: SamplingData
+    phoneme_path: SamplingData
+    phoneme_list_path: SamplingData
 
     def generate(self):
-        return InputData(
-            feature=numpy.load(self.feature_path, allow_pickle=True),
-            target=numpy.load(self.target_path, allow_pickle=True),
+        return Input(
+            f0=SamplingData.load(self.f0_path),
+            phoneme=SamplingData.load(self.phoneme_path),
+            phoneme_list=JvsPhoneme.load_julius_list(self.phoneme_list_path),
         )
 
 
-class FeatureTargetDataset(Dataset):
+class FeatureDataset(Dataset):
     def __init__(
         self,
-        datas: Sequence[Union[InputData, LazyInputData]],
+        inputs: List[Union[Input, LazyInput]],
     ):
-        self.datas = datas
+        self.inputs = inputs
+
+    @staticmethod
+    def extract_input(
+        f0_data: SamplingData,
+        phoneme_data: SamplingData,
+        phoneme_list_data: List[JvsPhoneme],
+    ):
+        rate = f0_data.rate
+
+        f0 = f0_data.array
+        phoneme = resample(rate=rate, data=phoneme_data)
+
+        length = min(len(f0), len(phoneme))
+        assert numpy.abs(length - len(f0)) < 10
+        assert numpy.abs(length - len(phoneme)) < 10
+
+        f0 = f0[:length]
+        phoneme = phoneme[:length]
+
+        phoneme_list = numpy.array([p.phoneme_id for p in phoneme_list_data])
+
+        return dict(
+            f0=f0,
+            phoneme=numpy.argmax(phoneme, axis=1).astype(numpy.int64),
+            phoneme_list=phoneme_list.astype(numpy.int64),
+        )
 
     def __len__(self):
-        return len(self.datas)
+        return len(self.inputs)
 
     def __getitem__(self, i):
-        data = self.datas[i]
-        if isinstance(input, LazyInputData):
-            data = data.generate()
+        input = self.inputs[i]
+        if isinstance(input, LazyInput):
+            input = input.generate()
 
-        return default_convert(
-            dict(
-                feature=data.feature,
-                target=data.target,
-            )
+        return self.extract_input(
+            f0_data=input.f0,
+            phoneme_data=input.phoneme,
+            phoneme_list_data=input.phoneme_list,
         )
+
+
+class SpeakerFeatureDataset(Dataset):
+    def __init__(self, dataset: FeatureDataset, speaker_ids: List[int]):
+        assert len(dataset) == len(speaker_ids)
+        self.dataset = dataset
+        self.speaker_ids = speaker_ids
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, i):
+        d = self.dataset[i]
+        d["speaker_id"] = numpy.array(self.speaker_ids[i], dtype=numpy.int64)
+        return d
+
+
+class TensorWrapperDataset(Dataset):
+    def __init__(self, dataset: Dataset):
+        self.dataset = dataset
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, i):
+        return default_convert(self.dataset[i])
 
 
 def create_dataset(config: DatasetConfig):
-    feature_paths = [Path(p) for p in sorted(glob.glob(str(config.feature_glob)))]
-    assert len(feature_paths) > 0
+    f0_paths = {Path(p).stem: Path(p) for p in glob(config.f0_glob)}
+    fn_list = sorted(f0_paths.keys())
+    assert len(fn_list) > 0
 
-    target_paths = [Path(p) for p in sorted(glob.glob(str(config.target_glob)))]
-    assert len(feature_paths) == len(target_paths)
+    phoneme_paths = {Path(p).stem: Path(p) for p in glob(config.phoneme_glob)}
+    assert set(fn_list) == set(phoneme_paths.keys())
 
-    features = [
-        LazyInputData(
-            feature_path=feature_path,
-            target_path=target_path,
+    phoneme_list_paths = {Path(p).stem: Path(p) for p in glob(config.phoneme_list_glob)}
+    assert set(fn_list) == set(phoneme_list_paths.keys())
+
+    speaker_ids: Optional[Dict[str, int]] = None
+    if config.speaker_dict_path is not None:
+        fn_each_speaker: Dict[str, List[str]] = json.loads(
+            config.speaker_dict_path.read_text()
         )
-        for feature_path, target_path in zip(feature_paths, target_paths)
-    ]
+        assert config.speaker_size == len(fn_each_speaker)
 
-    if config.seed is not None:
-        numpy.random.RandomState(config.seed).shuffle(features)
+        speaker_ids = {
+            fn: speaker_id
+            for speaker_id, (_, fns) in enumerate(fn_each_speaker.items())
+            for fn in fns
+        }
+        assert set(fn_list).issubset(set(speaker_ids.keys()))
 
-    tests, trains = features[: config.test_num], features[config.test_num :]
+    numpy.random.RandomState(config.seed).shuffle(fn_list)
 
-    def dataset_wrapper(datas, is_eval: bool):
-        dataset = FeatureTargetDataset(
-            datas=datas,
-        )
-        if is_eval:
-            dataset = ConcatDataset([dataset] * config.eval_times_num)
+    test_num = config.test_num
+    trains = fn_list[test_num:]
+    tests = fn_list[:test_num]
+
+    def _dataset(fns, for_test=False):
+        inputs = [
+            LazyInput(
+                f0_path=f0_paths[fn],
+                phoneme_path=phoneme_paths[fn],
+                phoneme_list_path=phoneme_list_paths[fn],
+            )
+            for fn in fns
+        ]
+
+        dataset = FeatureDataset(inputs=inputs)
+
+        if speaker_ids is not None:
+            dataset = SpeakerFeatureDataset(
+                dataset=dataset,
+                speaker_ids=[speaker_ids[fn] for fn in fns],
+            )
+
+        dataset = TensorWrapperDataset(dataset)
+
+        if for_test:
+            dataset = ConcatDataset([dataset] * config.test_trial_num)
+
         return dataset
 
     return {
-        "train": dataset_wrapper(trains, is_eval=False),
-        "test": dataset_wrapper(tests, is_eval=False),
-        "eval": dataset_wrapper(tests, is_eval=True),
+        "train": _dataset(trains),
+        "test": _dataset(tests, for_test=True),
     }

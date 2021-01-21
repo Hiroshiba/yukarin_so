@@ -15,10 +15,15 @@ from torch.optim.optimizer import Optimizer
 
 from yukarin_so.config import Config
 from yukarin_so.dataset import create_dataset
-from yukarin_so.model import Model, create_network
+from yukarin_so.model import Model
+from yukarin_so.network.predictor import create_predictor
 from yukarin_so.utility.pytorch_utility import init_weights
 from yukarin_so.utility.trainer_extension import TensorboardReport, WandbReport
-from yukarin_so.utility.trainer_utility import LowValueTrigger, create_iterator
+from yukarin_so.utility.trainer_utility import (
+    LowValueTrigger,
+    create_iterator,
+    list_concat,
+)
 
 
 def create_trainer(
@@ -34,8 +39,8 @@ def create_trainer(
         yaml.safe_dump(config.to_dict(), f)
 
     # model
-    networks = create_network(config.network)
-    model = Model(model_config=config.model, networks=networks)
+    predictor = create_predictor(config.network)
+    model = Model(model_config=config.model, predictor=predictor)
     if config.train.weight_initializer is not None:
         init_weights(model, name=config.train.weight_initializer)
 
@@ -46,7 +51,6 @@ def create_trainer(
     _create_iterator = partial(
         create_iterator,
         batch_size=config.train.batch_size,
-        eval_batch_size=config.train.eval_batch_size,
         num_processes=config.train.num_processes,
         use_multithread=config.train.use_multithread,
     )
@@ -54,7 +58,6 @@ def create_trainer(
     datasets = create_dataset(config.dataset)
     train_iter = _create_iterator(datasets["train"], for_train=True)
     test_iter = _create_iterator(datasets["test"], for_train=False)
-    eval_iter = _create_iterator(datasets["eval"], for_train=False)
 
     warnings.simplefilter("error", MultiprocessIterator.TimeoutWarning)
 
@@ -75,12 +78,13 @@ def create_trainer(
         iterator=train_iter,
         optimizer=optimizer,
         model=model,
+        converter=list_concat,
         device=device,
     )
 
     # trainer
     trigger_log = (config.train.log_iteration, "iteration")
-    trigger_eval = (config.train.eval_iteration, "iteration")
+    trigger_eval = (config.train.snapshot_iteration, "iteration")
     trigger_stop = (
         (config.train.stop_iteration, "iteration")
         if config.train.stop_iteration is not None
@@ -88,18 +92,34 @@ def create_trainer(
     )
 
     trainer = Trainer(updater, stop_trigger=trigger_stop, out=output)
+    writer = SummaryWriter(Path(output))
 
-    ext = extensions.Evaluator(test_iter, model, device=device)
+    sample_data = datasets["train"][0]
+    writer.add_graph(
+        model,
+        input_to_model=(
+            [sample_data["f0"].to(device)],
+            [sample_data["phoneme"].to(device)],
+            [sample_data["phoneme_list"].to(device)],
+            (
+                [sample_data["speaker_id"].to(device)]
+                if predictor.with_speaker
+                else None
+            ),
+        ),
+    )
+
+    ext = extensions.Evaluator(test_iter, model, converter=list_concat, device=device)
     trainer.extend(ext, name="test", trigger=trigger_log)
 
     if config.train.stop_iteration is not None:
         saving_model_num = int(
-            config.train.stop_iteration / config.train.eval_iteration / 10
+            config.train.stop_iteration / config.train.snapshot_iteration / 10
         )
     else:
         saving_model_num = 10
     ext = extensions.snapshot_object(
-        networks.predictor,
+        predictor,
         filename="predictor_{.updater.iteration}.pth",
         n_retains=saving_model_num,
     )
@@ -116,7 +136,7 @@ def create_trainer(
         trigger=trigger_log,
     )
 
-    ext = TensorboardReport(writer=SummaryWriter(Path(output)))
+    ext = TensorboardReport(writer=writer)
     trainer.extend(ext, trigger=trigger_log)
 
     if config.project.category is not None:

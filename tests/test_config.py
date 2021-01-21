@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 import yaml
-from yukarin_so.config import Config
 from yaml import SafeLoader
+from yukarin_so.config import Config
 
 from tests.utility import get_data_directory
 
